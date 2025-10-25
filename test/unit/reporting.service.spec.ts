@@ -165,5 +165,135 @@ describe('ReportingService', () => {
       expect(result).toHaveLength(0);
       expect(mockShowRepository.find).not.toHaveBeenCalled(); // Should not query shows if no sales
     });
+
+    it('should handle multiple movies with different sales (positive case)', async () => {
+      // Arrange
+      const movies = [
+        mockMovie,
+        { ...mockMovie, id: 'movie-2', title: 'Inception' },
+        { ...mockMovie, id: 'movie-3', title: 'Interstellar' },
+      ];
+      mockMovieRepository.find.mockResolvedValue(movies);
+
+      const mockQueryBuilder = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getCount: jest
+          .fn()
+          .mockResolvedValueOnce(45) // Movie 1: 45 tickets
+          .mockResolvedValueOnce(45) // Movie 1 show tickets
+          .mockResolvedValueOnce(30) // Movie 2: 30 tickets
+          .mockResolvedValueOnce(30) // Movie 2 show tickets
+          .mockResolvedValueOnce(0), // Movie 3: 0 tickets
+      };
+
+      (mockReservedSeatRepository.createQueryBuilder as jest.Mock).mockReturnValue(
+        mockQueryBuilder,
+      );
+
+      mockShowRepository.find.mockResolvedValue([mockShow]);
+      mockSeatRepository.count.mockResolvedValue(60);
+
+      // Act
+      const result = await service.getReport();
+
+      // Assert
+      expect(result).toHaveLength(2); // Only 2 movies with sales
+      expect(result[0].totalTicketsSold).toBe(45);
+      expect(result[1].totalTicketsSold).toBe(30);
+    });
+
+    it('should exclude shows with zero sales from movie report (positive case)', async () => {
+      // Arrange
+      mockMovieRepository.find.mockResolvedValue([mockMovie]);
+
+      const show2 = { ...mockShow, id: 'show-2' };
+
+      const mockQueryBuilder = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getCount: jest
+          .fn()
+          .mockResolvedValueOnce(45) // Total movie tickets
+          .mockResolvedValueOnce(45) // Show 1 tickets
+          .mockResolvedValueOnce(0), // Show 2 tickets (should be excluded)
+      };
+
+      (mockReservedSeatRepository.createQueryBuilder as jest.Mock).mockReturnValue(
+        mockQueryBuilder,
+      );
+
+      mockShowRepository.find.mockResolvedValue([mockShow, show2]);
+      mockSeatRepository.count.mockResolvedValue(60);
+
+      // Act
+      const result = await service.getReport();
+
+      // Assert
+      expect(result).toHaveLength(1);
+      expect(result[0].shows).toHaveLength(1); // Only show with sales
+      expect(result[0].shows[0].soldTickets).toBe(45);
+    });
+
+    it('should calculate remaining seats correctly (positive case)', async () => {
+      // Arrange
+      mockMovieRepository.find.mockResolvedValue([mockMovie]);
+
+      const mockQueryBuilder = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getCount: jest
+          .fn()
+          .mockResolvedValueOnce(25) // Total tickets
+          .mockResolvedValueOnce(25), // Show tickets
+      };
+
+      (mockReservedSeatRepository.createQueryBuilder as jest.Mock).mockReturnValue(
+        mockQueryBuilder,
+      );
+
+      mockShowRepository.find.mockResolvedValue([mockShow]);
+      mockSeatRepository.count.mockResolvedValue(60);
+
+      // Act
+      const result = await service.getReport();
+
+      // Assert
+      expect(result[0].shows[0].totalSeats).toBe(60);
+      expect(result[0].shows[0].soldTickets).toBe(25);
+      expect(result[0].shows[0].remainingSeats).toBe(35);
+    });
+
+    it('should handle sold-out shows (positive case)', async () => {
+      // Arrange
+      mockMovieRepository.find.mockResolvedValue([mockMovie]);
+
+      const mockQueryBuilder = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getCount: jest
+          .fn()
+          .mockResolvedValueOnce(60) // Total tickets
+          .mockResolvedValueOnce(60), // Show tickets (sold out)
+      };
+
+      (mockReservedSeatRepository.createQueryBuilder as jest.Mock).mockReturnValue(
+        mockQueryBuilder,
+      );
+
+      mockShowRepository.find.mockResolvedValue([mockShow]);
+      mockSeatRepository.count.mockResolvedValue(60);
+
+      // Act
+      const result = await service.getReport();
+
+      // Assert
+      expect(result[0].shows[0].soldTickets).toBe(60);
+      expect(result[0].shows[0].remainingSeats).toBe(0);
+    });
   });
 });

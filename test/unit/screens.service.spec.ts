@@ -89,6 +89,47 @@ describe('ScreensService', () => {
       expect(mockRepository.create).toHaveBeenCalledWith(createDto);
       expect(mockRepository.save).toHaveBeenCalled();
     });
+
+    it('should create screen with large seat layout (positive case)', async () => {
+      // Arrange
+      const largeSeats = Array.from({ length: 60 }, (_, i) => ({
+        row: String.fromCharCode(65 + Math.floor(i / 10)), // A-F
+        number: (i % 10) + 1,
+        seatType: i < 20 ? SeatType.PREMIUM : SeatType.REGULAR,
+      }));
+
+      const largeSeatDto: CreateScreenDto = {
+        name: 'IMAX Screen',
+        seats: largeSeats,
+      };
+
+      const largeScreen = {
+        ...mockScreen,
+        name: 'IMAX Screen',
+        seats: largeSeats.map((s, i) => ({ ...s, id: `seat-${i}` })),
+      } as any;
+
+      mockRepository.create.mockReturnValue(largeScreen);
+      mockRepository.save.mockResolvedValue(largeScreen);
+
+      // Act
+      const result = await service.create(largeSeatDto);
+
+      // Assert
+      expect(result.seats).toHaveLength(60);
+      expect(mockRepository.create).toHaveBeenCalledWith(largeSeatDto);
+    });
+
+    it('should handle database errors gracefully (negative case)', async () => {
+      // Arrange
+      mockRepository.create.mockReturnValue(mockScreen);
+      mockRepository.save.mockRejectedValue(new Error('Connection timeout'));
+
+      // Act & Assert
+      await expect(service.create(createDto)).rejects.toThrow(
+        'Connection timeout',
+      );
+    });
   });
 
   describe('findAll', () => {
@@ -121,6 +162,39 @@ describe('ScreensService', () => {
       });
       expect(result).toEqual([]);
       expect(result).toHaveLength(0);
+    });
+
+    it('should return screens with seats properly loaded (positive case)', async () => {
+      // Arrange
+      const screenWithSeats = {
+        ...mockScreen,
+        seats: [
+          {
+            id: 'seat-1',
+            row: 'A',
+            number: 1,
+            seatType: SeatType.REGULAR,
+          },
+          {
+            id: 'seat-2',
+            row: 'A',
+            number: 2,
+            seatType: SeatType.PREMIUM,
+          },
+        ],
+      } as any;
+
+      mockRepository.find.mockResolvedValue([screenWithSeats]);
+
+      // Act
+      const result = await service.findAll();
+
+      // Assert
+      expect(result[0].seats).toBeDefined();
+      expect(result[0].seats).toHaveLength(2);
+      expect(mockRepository.find).toHaveBeenCalledWith({
+        relations: ['seats'],
+      });
     });
   });
 

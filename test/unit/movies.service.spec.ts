@@ -78,6 +78,46 @@ describe('MoviesService', () => {
       expect(mockRepository.create).toHaveBeenCalledWith(createDto);
       expect(mockRepository.save).toHaveBeenCalled();
     });
+
+    it('should create movie with minimal data (positive case)', async () => {
+      // Arrange
+      const minimalDto: CreateMovieDto = {
+        title: 'Short Film',
+        duration: 30,
+      };
+
+      const minimalMovie = {
+        id: 'movie-uuid-2',
+        title: 'Short Film',
+        description: undefined,
+        duration: 30,
+        shows: [],
+      } as Movie;
+
+      mockRepository.create.mockReturnValue(minimalMovie);
+      mockRepository.save.mockResolvedValue(minimalMovie);
+
+      // Act
+      const result = await service.create(minimalDto);
+
+      // Assert
+      expect(mockRepository.create).toHaveBeenCalledWith(minimalDto);
+      expect(result.description).toBeUndefined();
+      expect(result.title).toBe('Short Film');
+    });
+
+    it('should handle database constraint violations (negative case)', async () => {
+      // Arrange
+      mockRepository.create.mockReturnValue(mockMovie);
+      mockRepository.save.mockRejectedValue(
+        new Error('Unique constraint violation'),
+      );
+
+      // Act & Assert
+      await expect(service.create(createDto)).rejects.toThrow(
+        'Unique constraint violation',
+      );
+    });
   });
 
   describe('findAll', () => {
@@ -106,6 +146,23 @@ describe('MoviesService', () => {
       expect(mockRepository.find).toHaveBeenCalled();
       expect(result).toEqual([]);
       expect(result).toHaveLength(0);
+    });
+
+    it('should handle large datasets (positive case)', async () => {
+      // Arrange
+      const largeDataset = Array.from({ length: 100 }, (_, i) => ({
+        ...mockMovie,
+        id: `movie-uuid-${i}`,
+        title: `Movie ${i}`,
+      }));
+      mockRepository.find.mockResolvedValue(largeDataset);
+
+      // Act
+      const result = await service.findAll();
+
+      // Assert
+      expect(result).toHaveLength(100);
+      expect(mockRepository.find).toHaveBeenCalled();
     });
   });
 

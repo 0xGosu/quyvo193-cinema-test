@@ -200,6 +200,65 @@ describe('ShowsService', () => {
       );
       expect(mockShowsRepository.save).not.toHaveBeenCalled();
     });
+
+    it('should allow shows on different screens at same time (positive case)', async () => {
+      // Arrange
+      const showOnDifferentScreen = {
+        ...mockShow,
+        screen: { id: 'different-screen-uuid', name: 'Screen 2' },
+        startTime: new Date('2025-12-25T19:00:00Z'),
+      };
+      mockMoviesRepository.findOneBy.mockResolvedValue(mockMovie);
+      mockScreensRepository.findOneBy.mockResolvedValue(mockScreen);
+      mockShowsRepository.find.mockResolvedValue([]); // No conflicts on same screen
+      mockShowsRepository.create.mockReturnValue(mockShow);
+      mockShowsRepository.save.mockResolvedValue(mockShow);
+
+      // Act
+      const result = await service.create(createDto);
+
+      // Assert
+      expect(mockShowsRepository.save).toHaveBeenCalled();
+      expect(result).toEqual(mockShow);
+    });
+
+    it('should detect partial overlap at start (negative case)', async () => {
+      // Arrange
+      const overlappingShow = {
+        ...mockShow,
+        startTime: new Date('2025-12-25T17:00:00Z'), // Starts 2 hours before
+        duration: 150, // 2.5 hours - overlaps with new show start
+      };
+      mockMoviesRepository.findOneBy.mockResolvedValue(mockMovie);
+      mockScreensRepository.findOneBy.mockResolvedValue(mockScreen);
+      mockShowsRepository.find.mockResolvedValue([overlappingShow]);
+
+      // Act & Assert
+      await expect(service.create(createDto)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('should detect complete overlap (negative case)', async () => {
+      // Arrange
+      const shortShowDto = {
+        ...createDto,
+        duration: 60, // 1 hour show
+      };
+      const longShow = {
+        ...mockShow,
+        startTime: new Date('2025-12-25T18:00:00Z'), // Starts 1 hour before
+        duration: 240, // 4 hours - completely contains new show
+      };
+      mockMoviesRepository.findOneBy.mockResolvedValue(mockMovie);
+      mockScreensRepository.findOneBy.mockResolvedValue(mockScreen);
+      mockShowsRepository.find.mockResolvedValue([longShow]);
+
+      // Act & Assert
+      await expect(service.create(shortShowDto)).rejects.toThrow(
+        ConflictException,
+      );
+    });
   });
 
   describe('findAllOfMovie', () => {
@@ -340,6 +399,64 @@ describe('ShowsService', () => {
       await expect(
         service.getShowSeatsWithStatus('non-existent-id'),
       ).rejects.toThrow('Show not found');
+    });
+
+    it('should show all seats as available when no reservations (positive case)', async () => {
+      // Arrange
+      mockShowsRepository.findOne.mockResolvedValue(mockShowWithSeats);
+
+      const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]), // No reservations
+      };
+
+      (mockShowsRepository.manager.createQueryBuilder as jest.Mock).mockReturnValue(
+        mockQueryBuilder,
+      );
+
+      // Act
+      const result = await service.getShowSeatsWithStatus('show-uuid');
+
+      // Assert
+      expect(result.totalSeats).toBe(2);
+      expect(result.reservedSeats).toBe(0);
+      expect(result.seats.every((seat) => seat.status === 'AVAILABLE')).toBe(
+        true,
+      );
+    });
+
+    it('should handle screen with no seats (edge case)', async () => {
+      // Arrange
+      const showWithNoSeats = {
+        ...mockShow,
+        screen: {
+          ...mockScreen,
+          seats: [],
+        },
+      };
+      mockShowsRepository.findOne.mockResolvedValue(showWithNoSeats);
+
+      const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      };
+
+      (mockShowsRepository.manager.createQueryBuilder as jest.Mock).mockReturnValue(
+        mockQueryBuilder,
+      );
+
+      // Act
+      const result = await service.getShowSeatsWithStatus('show-uuid');
+
+      // Assert
+      expect(result.totalSeats).toBe(0);
+      expect(result.seats).toHaveLength(0);
     });
   });
 });
