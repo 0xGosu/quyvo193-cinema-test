@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -19,10 +20,9 @@ import { ReservedSeat } from '../database/entities/reserved-seat.entity';
 
 @Injectable()
 export class ReservationsService {
-  constructor(
-    @InjectRepository(Reservation)
-    private dataSource: DataSource,
-  ) {}
+  private readonly logger = new Logger(ReservationsService.name);
+
+  constructor(private dataSource: DataSource) {}
 
   /**
    * Creates a new PENDING reservation atomically.
@@ -60,10 +60,15 @@ export class ReservationsService {
           .innerJoinAndSelect('reservedSeat.seat', 'seat')
           .where('reservation.showId = :showId', { showId })
           .andWhere('seat.id IN (:...seatIds)', { seatIds })
-          .andWhere('reservation.status IN (:...statuses)', {
-            statuses: [ReservationStatus.CONFIRMED, ReservationStatus.PENDING],
-          })
-          .andWhere('reservation.expiresAt > :now', { now: new Date() })
+          .andWhere(
+            '(reservation.status = :confirmedStatus OR ' +
+              '(reservation.status = :pendingStatus AND reservation.expiresAt > :now))',
+            {
+              confirmedStatus: ReservationStatus.CONFIRMED,
+              pendingStatus: ReservationStatus.PENDING,
+              now: new Date(),
+            },
+          )
           .getMany();
 
         if (existingReservations.length > 0) {
@@ -76,7 +81,7 @@ export class ReservationsService {
           return total + show.basePrice * multiplier;
         }, 0);
 
-        console.log({ totalAmount });
+        this.logger.debug(`Total amount calculated: ${totalAmount}`);
 
         // 4. Create reservation
         const expiryTime = new Date();
@@ -152,6 +157,7 @@ export class ReservationsService {
 
       // Finalize the purchase
       reservation.status = ReservationStatus.CONFIRMED;
+      reservation.expiresAt = null; // Clear expiration for confirmed reservations
 
       return transactionalEntityManager.save(reservation);
     });

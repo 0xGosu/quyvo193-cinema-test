@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { ReservationStatus } from '../common/enums/reservation-status.enum';
-import { Movie } from 'src/database/entities/movie.entity';
+import { Movie } from '../database/entities/movie.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ReservedSeat } from 'src/database/entities/reserved-seat.entity';
-import { Show } from 'src/database/entities/show.entity';
-import { Seat } from 'src/database/entities/seat.entity';
+import { ReservedSeat } from '../database/entities/reserved-seat.entity';
+import { Show } from '../database/entities/show.entity';
+import { Seat } from '../database/entities/seat.entity';
 
 // movie-reporting.dto.ts
 export class MovieReportingDto {

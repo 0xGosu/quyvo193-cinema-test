@@ -32,11 +32,19 @@ describe('ReservationsService', () => {
   let mockDataSource: Partial<DataSource>;
   let mockReservationRepo: Partial<Repository<Reservation>>;
 
+  // Mock query builder
+  const mockQueryBuilder = {
+    innerJoinAndSelect: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getMany: jest.fn().mockResolvedValue([]),
+  };
+
   // Mock transaction manager
   const mockEntityManager = {
     findOne: jest.fn(),
     findBy: jest.fn(),
-    count: jest.fn(),
+    createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
     create: jest.fn().mockReturnValue(mockReservation),
     save: jest.fn().mockResolvedValue(mockReservation),
   };
@@ -91,9 +99,11 @@ describe('ReservationsService', () => {
 
     it('should create a reservation (positive case)', async () => {
       // Arrange
-      mockEntityManager.findOne.mockResolvedValue(mockShow);
+      mockEntityManager.findOne
+        .mockResolvedValueOnce(mockShow) // First call for finding the show
+        .mockResolvedValueOnce(mockReservation); // Second call for reloading with relations
       mockEntityManager.findBy.mockResolvedValue(mockSeats);
-      mockEntityManager.count.mockResolvedValue(0); // No conflicts
+      mockQueryBuilder.getMany.mockResolvedValue([]); // No conflicts
 
       // Act
       const result = await service.create(dto, userId);
@@ -106,19 +116,20 @@ describe('ReservationsService', () => {
       expect(mockEntityManager.findBy).toHaveBeenCalledWith(Seat, {
         id: In(dto.seatIds),
       });
-      expect(mockEntityManager.count).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            show: { id: dto.showId },
-            reservedSeats: { seat: { id: In(dto.seatIds) } },
-            status: In([
-              ReservationStatus.CONFIRMED,
-              ReservationStatus.PENDING,
-            ]),
-            expiresAt: MoreThan(expect.any(Date)),
-          },
-        }),
+      expect(mockEntityManager.createQueryBuilder).toHaveBeenCalledWith(
+        Reservation,
+        'reservation',
       );
+      expect(mockQueryBuilder.innerJoinAndSelect).toHaveBeenCalledWith(
+        'reservation.reservedSeats',
+        'reservedSeat',
+      );
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'reservation.showId = :showId',
+        { showId: dto.showId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalled();
+      expect(mockQueryBuilder.getMany).toHaveBeenCalled();
       expect(mockEntityManager.save).toHaveBeenCalled();
       expect(result).toEqual(mockReservation);
     });
@@ -127,7 +138,7 @@ describe('ReservationsService', () => {
       // Arrange
       mockEntityManager.findOne.mockResolvedValue(mockShow);
       mockEntityManager.findBy.mockResolvedValue(mockSeats);
-      mockEntityManager.count.mockResolvedValue(1); // Conflict found!
+      mockQueryBuilder.getMany.mockResolvedValue([mockReservation]); // Conflict found!
 
       // Act & Assert
       await expect(service.create(dto, userId)).rejects.toThrow(

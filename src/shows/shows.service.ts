@@ -70,7 +70,7 @@ export class ShowsService {
 
       if (hasConflict) {
         throw new ConflictException(
-          `Time conflict with "${existingShow.movie.id}"`,
+          `Time conflict with show for "${existingShow.movie.title}" at ${existingShow.startTime}`,
         );
       }
     }
@@ -120,10 +120,10 @@ export class ShowsService {
       .andWhere('reservation.status IN (:...statuses)', {
         statuses: ['PENDING', 'CONFIRMED'],
       })
-      .select(['seat.id'])
+      .select(['seat.id as seat_id'])
       .getRawMany();
 
-    const reservedSeatIds = reservedSeats.map((seat) => seat.seadId);
+    const reservedSeatIds = reservedSeats.map((seat) => seat.seat_id);
 
     const availableSeats = show.screen.seats.map((seat) => {
       if (reservedSeatIds.includes(seat.id)) {
@@ -131,8 +131,6 @@ export class ShowsService {
       }
       return { ...seat, status: 'AVAILABLE' };
     });
-
-    console.log(availableSeats);
 
     return {
       show: {
